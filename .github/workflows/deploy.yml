@@ -1,0 +1,26 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest
+        working-directory: /opt/applypilot-discovery
+        run: git pull --ff-only origin main
+
+      - name: Update deps
+        working-directory: /opt/applypilot-discovery
+        run: python3.11 -m pip install -q -r requirements.txt
+
+      - name: Restart service
+        run: sudo systemctl restart applypilot-discovery
+
+      - name: Verify
+        run: |
+          sleep 3
+          systemctl is-active applypilot-discovery \
+            || (journalctl -u applypilot-discovery -n 20 --no-pager && exit 1)

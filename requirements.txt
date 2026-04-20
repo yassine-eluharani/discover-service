@@ -1,0 +1,9 @@
+python-jobspy>=0.1.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
+pandas>=2.0.0
+libsql-experimental>=0.0.8
+
+# Install the applypilot backend (for discovery modules).
+# Point this at your fork if you have one:
+git+https://github.com/yassine-eluharani/vigilant-funicular.git#subdirectory=backend

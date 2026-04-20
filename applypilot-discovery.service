@@ -1,0 +1,19 @@
+[Unit]
+Description=ApplyPilot Discovery Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yassine
+WorkingDirectory=/opt/applypilot-discovery
+ExecStart=/usr/local/bin/python3.11 main.py
+Restart=on-failure
+RestartSec=30
+EnvironmentFile=/opt/applypilot-discovery/.env
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=applypilot-discovery
+
+[Install]
+WantedBy=multi-user.target
