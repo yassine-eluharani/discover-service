@@ -2,7 +2,7 @@ name: applypilot-discovery
 
 services:
   discovery:
-    build: .
+    image: ghcr.io/yassine-eluharani/applypilot-discovery:latest
     restart: unless-stopped
     env_file: .env
     environment:
