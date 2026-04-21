@@ -40,13 +40,10 @@ def _sqlite_connection(path: str) -> sqlite3.Connection:
     return conn
 
 
-def _turso_connection(url: str, token: str) -> sqlite3.Connection:
-    try:
-        import libsql_experimental as libsql
-    except ImportError:
-        raise RuntimeError("pip install libsql-experimental")
+def _turso_connection(url: str, token: str):
     if not hasattr(_local, "turso_conn"):
-        _local.turso_conn = libsql.connect(database=url, auth_token=token)
+        from turso import TursoConnection
+        _local.turso_conn = TursoConnection(url, token)
     return _local.turso_conn
 
 
