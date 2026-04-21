@@ -171,4 +171,20 @@ def run_cycle() -> None:
     log.info("%d unique combos, %d stale → scraping", len(combos), len(stale))
     for combo in stale:
         _discover_combo(conn, combo)
-    log.info("Cycle complete — %d combos scraped", len(stale))
+    log.info("Discovery done — %d combos scraped", len(stale))
+
+    # Enrich any jobs without a full description (new ones + any leftovers)
+    pending = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE detail_scraped_at IS NULL"
+    ).fetchone()[0]
+
+    if pending > 0:
+        from applypilot.enrichment.detail import run_enrichment
+        log.info("Enriching %d pending jobs...", pending)
+        stats = run_enrichment(limit=50, workers=1)
+        log.info("Enrich done: %d ok, %d partial, %d error",
+                 stats.get("ok", 0), stats.get("partial", 0), stats.get("error", 0))
+    else:
+        log.info("No pending jobs to enrich")
+
+    log.info("Cycle complete")

@@ -3,6 +3,8 @@ python-dotenv>=1.0.0
 pyyaml>=6.0
 pandas>=2.0.0
 httpx>=0.25.0
+playwright>=1.40.0
+beautifulsoup4>=4.12.0
 
 # Install the applypilot backend (for discovery modules).
 # Point this at your fork if you have one:
