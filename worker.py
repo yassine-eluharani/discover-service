@@ -187,4 +187,29 @@ def run_cycle() -> None:
     else:
         log.info("No pending jobs to enrich")
 
+    # Filter: mark country-restricted jobs before scoring
+    unfiltered = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL AND filtered_at IS NULL"
+    ).fetchone()[0]
+    if unfiltered > 0:
+        from filter import run_location_filter
+        log.info("Running location filter on %d unfiltered jobs...", unfiltered)
+        fstats = run_location_filter(conn)
+        log.info("Filter done: checked %d, filtered %d",
+                 fstats.get("checked", 0), fstats.get("filtered", 0))
+    else:
+        log.info("No unfiltered jobs")
+
+    # Index: extract structured metadata once per job
+    unindexed = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL AND job_metadata_json IS NULL"
+    ).fetchone()[0]
+    if unindexed > 0:
+        from indexer import run_indexing
+        log.info("Indexing metadata for %d jobs...", unindexed)
+        istats = run_indexing(conn)
+        log.info("Index done: %d indexed, %d errors", istats.get("indexed", 0), istats.get("errors", 0))
+    else:
+        log.info("No unindexed jobs")
+
     log.info("Cycle complete")
