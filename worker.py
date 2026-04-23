@@ -119,7 +119,7 @@ def _discover_combo(conn, combo: dict) -> None:
 
     run_id = _record_start(conn, query, location, boards)
     try:
-        from applypilot.discovery.jobspy import _run_one_search, _load_location_config
+        from discovery import _run_one_search, _load_location_config
 
         accept_locs, reject_locs = _load_location_config(cfg)
         result = _run_one_search(
@@ -179,7 +179,7 @@ def run_cycle() -> None:
     ).fetchone()[0]
 
     if pending > 0:
-        from applypilot.enrichment.detail import run_enrichment
+        from enrichment import run_enrichment
         log.info("Enriching %d pending jobs...", pending)
         stats = run_enrichment(limit=50, workers=1)
         log.info("Enrich done: %d ok, %d partial, %d error",
