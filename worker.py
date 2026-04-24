@@ -174,9 +174,9 @@ def run_cycle() -> None:
     log.info("Discovery done — %d combos scraped", len(stale))
 
     # Enrich any jobs without a full description (new ones + any leftovers)
-    pending = conn.execute(
+    pending = int(conn.execute(
         "SELECT COUNT(*) FROM jobs WHERE detail_scraped_at IS NULL"
-    ).fetchone()[0]
+    ).fetchone()[0])
 
     if pending > 0:
         from enrichment import run_enrichment
@@ -189,9 +189,9 @@ def run_cycle() -> None:
         log.info("No pending jobs to enrich")
 
     # Filter: mark country-restricted jobs before scoring
-    unfiltered = conn.execute(
+    unfiltered = int(conn.execute(
         "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL AND filtered_at IS NULL"
-    ).fetchone()[0]
+    ).fetchone()[0])
     if unfiltered > 0:
         from filter import run_location_filter
         # Collect extra reject patterns from all user configs (union, deduped)
@@ -212,9 +212,9 @@ def run_cycle() -> None:
         log.info("No unfiltered jobs")
 
     # Index: extract structured metadata once per job
-    unindexed = conn.execute(
+    unindexed = int(conn.execute(
         "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL AND job_metadata_json IS NULL"
-    ).fetchone()[0]
+    ).fetchone()[0])
     if unindexed > 0:
         from indexer import run_indexing
         index_limit = int(os.environ.get("INDEX_LIMIT", "100"))

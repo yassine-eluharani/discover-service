@@ -150,15 +150,19 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
             continue
 
         try:
-            conn.execute(
-                "INSERT INTO jobs (url, title, company, salary, description, location, site, strategy, "
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO jobs (url, title, company, salary, description, location, site, strategy, "
                 "discovered_at, full_description, application_url, detail_scraped_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, title, company, salary, description, location_str, site_name, strategy, now,
                  full_description, apply_url, detail_scraped_at),
             )
-            new += 1
-        except sqlite3.IntegrityError:
+            # rowcount=1 means inserted; 0 means skipped (duplicate URL)
+            if getattr(cur, "rowcount", 1) == 0:
+                existing += 1
+            else:
+                new += 1
+        except Exception:
             existing += 1
 
     conn.commit()
