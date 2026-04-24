@@ -48,8 +48,13 @@ DEFAULT_REJECT_PATTERNS: list[str] = [
 ]
 
 
-def run_location_filter(conn=None) -> dict:
+def run_location_filter(conn=None, extra_patterns: list[str] | None = None) -> dict:
     """Scan enriched jobs for country-restriction patterns.
+
+    Args:
+        conn: Database connection. Uses get_connection() if None.
+        extra_patterns: Additional reject patterns collected from user configs.
+                        Merged (union) with DEFAULT_REJECT_PATTERNS.
 
     Returns {"filtered": int, "checked": int}
     """
@@ -57,9 +62,17 @@ def run_location_filter(conn=None) -> dict:
         from db import get_connection
         conn = get_connection()
 
+    all_patterns = list(DEFAULT_REJECT_PATTERNS)
+    if extra_patterns:
+        seen = {p.lower() for p in all_patterns}
+        for p in extra_patterns:
+            if p.strip() and p.strip().lower() not in seen:
+                all_patterns.append(p.strip())
+                seen.add(p.strip().lower())
+
     compiled = [
         re.compile(re.escape(p.strip()), re.IGNORECASE)
-        for p in DEFAULT_REJECT_PATTERNS
+        for p in all_patterns
         if p.strip()
     ]
 

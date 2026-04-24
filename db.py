@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 import threading
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 _local = threading.local()
 
@@ -82,7 +85,8 @@ def init_db() -> None:
             last_attempted_at     TEXT,
             apply_duration_ms     INTEGER,
             apply_task_id         TEXT,
-            verification_confidence TEXT
+            verification_confidence TEXT,
+            job_metadata_json     TEXT
         )
     """)
     conn.execute("""
@@ -98,3 +102,60 @@ def init_db() -> None:
         )
     """)
     conn.commit()
+
+
+def cleanup_old_jobs(days: int = 7, conn=None) -> int:
+    """Delete stale jobs that no user has engaged with.
+
+    A job is safe to delete when:
+      - It was discovered more than `days` days ago, AND
+      - No user has scored, tailored, covered, or applied to it (checked via
+        the user_jobs table — written by the main applypilot platform).
+
+    If the user_jobs table does not exist yet (discovery worker running before
+    the main app), all unengaged old jobs are deleted.
+
+    Returns the number of rows deleted.
+    """
+    if conn is None:
+        conn = get_connection()
+
+    cutoff = f"-{days} days"
+
+    # Check whether the user_jobs table exists in this DB
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='user_jobs'"
+    ).fetchone()
+    has_user_jobs = row is not None
+
+    if has_user_jobs:
+        cursor = conn.execute(
+            """
+            DELETE FROM jobs
+            WHERE discovered_at < datetime('now', ?)
+            AND url NOT IN (
+                SELECT DISTINCT job_url FROM user_jobs
+                WHERE fit_score             IS NOT NULL
+                   OR tailored_resume_path  IS NOT NULL
+                   OR cover_letter_path     IS NOT NULL
+                   OR applied_at            IS NOT NULL
+            )
+            """,
+            (cutoff,),
+        )
+    else:
+        # user_jobs doesn't exist — safe to delete anything old
+        cursor = conn.execute(
+            "DELETE FROM jobs WHERE discovered_at < datetime('now', ?)",
+            (cutoff,),
+        )
+
+    deleted = cursor.rowcount
+    conn.commit()
+
+    if deleted:
+        log.info("Cleanup: deleted %d jobs older than %d days", deleted, days)
+    else:
+        log.debug("Cleanup: no jobs older than %d days to remove", days)
+
+    return deleted

@@ -180,8 +180,9 @@ def run_cycle() -> None:
 
     if pending > 0:
         from enrichment import run_enrichment
-        log.info("Enriching %d pending jobs...", pending)
-        stats = run_enrichment(limit=50, workers=1)
+        enrich_limit = int(os.environ.get("ENRICH_LIMIT", "200"))
+        log.info("Enriching up to %d pending jobs (total pending: %d)...", enrich_limit, pending)
+        stats = run_enrichment(limit=enrich_limit, workers=1)
         log.info("Enrich done: %d ok, %d partial, %d error",
                  stats.get("ok", 0), stats.get("partial", 0), stats.get("error", 0))
     else:
@@ -193,8 +194,18 @@ def run_cycle() -> None:
     ).fetchone()[0]
     if unfiltered > 0:
         from filter import run_location_filter
-        log.info("Running location filter on %d unfiltered jobs...", unfiltered)
-        fstats = run_location_filter(conn)
+        # Collect extra reject patterns from all user configs (union, deduped)
+        extra_patterns: list[str] = []
+        seen_patterns: set[str] = set()
+        for entry in user_configs:
+            cfg = entry.get("config", {})
+            for p in cfg.get("description_reject_patterns", []):
+                if isinstance(p, str) and p.strip() and p.strip().lower() not in seen_patterns:
+                    extra_patterns.append(p.strip())
+                    seen_patterns.add(p.strip().lower())
+        log.info("Running location filter on %d unfiltered jobs (%d extra user patterns)...",
+                 unfiltered, len(extra_patterns))
+        fstats = run_location_filter(conn, extra_patterns=extra_patterns or None)
         log.info("Filter done: checked %d, filtered %d",
                  fstats.get("checked", 0), fstats.get("filtered", 0))
     else:
@@ -206,10 +217,16 @@ def run_cycle() -> None:
     ).fetchone()[0]
     if unindexed > 0:
         from indexer import run_indexing
-        log.info("Indexing metadata for %d jobs...", unindexed)
-        istats = run_indexing(conn)
+        index_limit = int(os.environ.get("INDEX_LIMIT", "100"))
+        log.info("Indexing metadata for up to %d jobs (total unindexed: %d)...", index_limit, unindexed)
+        istats = run_indexing(conn, limit=index_limit)
         log.info("Index done: %d indexed, %d errors", istats.get("indexed", 0), istats.get("errors", 0))
     else:
         log.info("No unindexed jobs")
+
+    # Cleanup: remove old unengaged jobs to prevent unbounded DB growth
+    from db import cleanup_old_jobs
+    cleanup_days = int(os.environ.get("CLEANUP_DAYS", "7"))
+    cleanup_old_jobs(days=cleanup_days, conn=conn)
 
     log.info("Cycle complete")
