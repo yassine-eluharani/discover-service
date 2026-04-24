@@ -10,9 +10,10 @@ _local = threading.local()
 
 
 class TursoCursor:
-    def __init__(self, rows: list, lastrowid: int | None = None):
+    def __init__(self, rows: list, lastrowid: int | None = None, rowcount: int = -1):
         self._rows = rows
         self.lastrowid = lastrowid
+        self.rowcount = rowcount
 
     def fetchone(self):
         return self._rows[0] if self._rows else None
@@ -83,7 +84,12 @@ class TursoConnection:
             rows.append(row)
 
         lastrowid = rows_data.get("last_insert_rowid")
-        return TursoCursor(rows, int(lastrowid) if lastrowid is not None else None)
+        affected = rows_data.get("affected_row_count", -1)
+        return TursoCursor(
+            rows,
+            int(lastrowid) if lastrowid is not None else None,
+            rowcount=int(affected) if affected is not None else -1,
+        )
 
     def commit(self) -> None:
         pass  # Turso auto-commits each statement
