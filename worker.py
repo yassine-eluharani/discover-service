@@ -13,7 +13,7 @@ import yaml
 log = logging.getLogger(__name__)
 
 STALE_AFTER_HOURS: float = float(os.environ.get("STALE_AFTER_HOURS", "2"))
-POPULAR_SEARCHES_PATH = Path(__file__).parent / "popular_searches.yaml"
+BOOTSTRAP_SEARCHES_PATH = Path(__file__).parent / "bootstrap_searches.yaml"
 
 
 # ── Freshness tracking ────────────────────────────────────────────────────────
@@ -56,10 +56,10 @@ def _record_done(conn, run_id: int, jobs_found: int, status: str = "done") -> No
 
 # ── Config loading ────────────────────────────────────────────────────────────
 
-def _load_popular() -> dict:
-    if not POPULAR_SEARCHES_PATH.exists():
+def _load_bootstrap() -> dict:
+    if not BOOTSTRAP_SEARCHES_PATH.exists():
         return {}
-    return yaml.safe_load(POPULAR_SEARCHES_PATH.read_text()) or {}
+    return yaml.safe_load(BOOTSTRAP_SEARCHES_PATH.read_text()) or {}
 
 
 def _load_user_configs(conn) -> list[dict]:
@@ -157,13 +157,19 @@ def run_cycle() -> None:
     init_db()
     conn = get_connection()
 
-    popular_cfg  = _load_popular()
     user_configs = _load_user_configs(conn)
 
     all_configs: list[dict] = []
-    if popular_cfg:
-        all_configs.append({"config": popular_cfg})
-    all_configs.extend(user_configs)
+    if user_configs:
+        # User demand exists — only scrape what users want
+        all_configs.extend(user_configs)
+        log.info("Demand-driven: %d user config(s)", len(user_configs))
+    else:
+        # No users yet — fall back to small bootstrap set (Remote-only)
+        bootstrap_cfg = _load_bootstrap()
+        if bootstrap_cfg:
+            all_configs.append({"config": bootstrap_cfg})
+            log.info("Bootstrap mode: no user configs, using bootstrap_searches.yaml")
 
     combos = _unique_combos(all_configs)
     stale  = [c for c in combos if _is_stale(conn, c["query"], c["location"], c["boards"])]

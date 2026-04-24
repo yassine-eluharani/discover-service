@@ -101,6 +101,20 @@ def init_db() -> None:
             jobs_found   INTEGER DEFAULT 0
         )
     """)
+    # Indexes — added to avoid full-table scans on every cycle
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_discovery_runs_lookup "
+        "ON discovery_runs(query, location, boards_json, status, completed_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_jobs_detail_scraped_at ON jobs(detail_scraped_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_jobs_filtered_at ON jobs(filtered_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_jobs_metadata_json ON jobs(job_metadata_json)"
+    )
     conn.commit()
 
 

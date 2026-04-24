@@ -90,17 +90,6 @@ def _title_ok(title: str | None, include_any: list[str], exclude_any: list[str])
 
 # -- DB storage (JobSpy DataFrame -> SQLite) ---------------------------------
 
-def _is_duplicate(conn: sqlite3.Connection, title: str | None, company: str | None) -> bool:
-    if not title or not company:
-        return False
-    row = conn.execute(
-        "SELECT 1 FROM jobs WHERE LOWER(TRIM(title)) = LOWER(TRIM(?)) "
-        "AND LOWER(TRIM(COALESCE(company, site))) = LOWER(TRIM(?)) LIMIT 1",
-        (title, company),
-    ).fetchone()
-    return row is not None
-
-
 def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tuple[int, int]:
     now = datetime.now(timezone.utc).isoformat()
     new = 0
@@ -144,10 +133,6 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
             detail_scraped_at = now
 
         apply_url = str(row.get("job_url_direct", "")) if str(row.get("job_url_direct", "")) != "nan" else None
-
-        if _is_duplicate(conn, title, company):
-            existing += 1
-            continue
 
         try:
             cur = conn.execute(

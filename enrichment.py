@@ -103,7 +103,7 @@ def resolve_url(raw_url: str, site: str) -> str | None:
 
 
 def resolve_all_urls(conn: sqlite3.Connection) -> dict:
-    rows = conn.execute("SELECT url, site FROM jobs").fetchall()
+    rows = conn.execute("SELECT url, site FROM jobs WHERE url NOT LIKE 'http%'").fetchall()
     resolved = 0
     failed = 0
     already_absolute = 0
