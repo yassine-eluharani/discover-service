@@ -15,6 +15,14 @@ users_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
 print(f"Before: {jobs_count} jobs, {runs_count} discovery_runs, {users_count} users (kept)")
 
+# Delete child rows first (user_jobs references jobs.url)
+try:
+    deleted_uj = conn.execute("DELETE FROM user_jobs").rowcount
+    conn.commit()
+    print(f"Cleared user_jobs: {deleted_uj} rows")
+except Exception as e:
+    print(f"user_jobs skip: {e}")
+
 conn.execute("DELETE FROM jobs")
 conn.execute("DELETE FROM discovery_runs")
 conn.commit()

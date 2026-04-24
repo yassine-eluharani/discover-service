@@ -52,7 +52,7 @@ def _extract_metadata(job: dict) -> dict | None:
         raw = client.chat(
             [{"role": "system", "content": _INDEX_PROMPT},
              {"role": "user", "content": text}],
-            max_tokens=512,
+            max_tokens=2048,
             temperature=0.0,
             json_mode=True,
         )
