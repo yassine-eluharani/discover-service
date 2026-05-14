@@ -118,58 +118,83 @@ def init_db() -> None:
     conn.commit()
 
 
-def cleanup_old_jobs(days: int = 7, conn=None) -> int:
+_ENGAGED_USER_JOBS_FILTER = """
+    SELECT DISTINCT job_url FROM user_jobs
+    WHERE fit_score             IS NOT NULL
+       OR tailored_resume_path  IS NOT NULL
+       OR tailored_resume_text  IS NOT NULL
+       OR cover_letter_path     IS NOT NULL
+       OR cover_letter_text     IS NOT NULL
+       OR favorited = 1
+       OR applied_at            IS NOT NULL
+"""
+
+
+def cleanup_old_jobs(days: int = 3, conn=None, batch_size: int = 500) -> int:
     """Delete stale jobs that no user has engaged with.
 
     A job is safe to delete when:
       - It was discovered more than `days` days ago, AND
-      - No user has scored, tailored, covered, or applied to it (checked via
-        the user_jobs table — written by the main applypilot platform).
+      - No user has scored, tailored, covered, favorited, or applied to it
+        (checked via the user_jobs table — written by the main applypilot
+        platform).
 
-    If the user_jobs table does not exist yet (discovery worker running before
-    the main app), all unengaged old jobs are deleted.
+    Pre-filter reject rows in `user_jobs` (e.g. ``apply_status='location_filtered'``
+    with no fit_score/tailor/cover/applied_at) are not engagement; they are
+    cascade-deleted alongside the parent job to satisfy the FK constraint.
 
-    Returns the number of rows deleted.
+    Batched in chunks of `batch_size` URLs so multi-thousand-row purges fit
+    within Turso's HTTP request budget. If `user_jobs` does not exist (worker
+    running before the main app), all unengaged old jobs are deleted.
+
+    Returns the total number of `jobs` rows deleted.
     """
     if conn is None:
         conn = get_connection()
 
     cutoff = f"-{days} days"
 
-    # Check whether the user_jobs table exists in this DB
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='user_jobs'"
     ).fetchone()
     has_user_jobs = row is not None
 
-    if has_user_jobs:
-        cursor = conn.execute(
-            """
-            DELETE FROM jobs
-            WHERE discovered_at < datetime('now', ?)
-            AND url NOT IN (
-                SELECT DISTINCT job_url FROM user_jobs
-                WHERE fit_score             IS NOT NULL
-                   OR tailored_resume_path  IS NOT NULL
-                   OR cover_letter_path     IS NOT NULL
-                   OR applied_at            IS NOT NULL
+    total_deleted = 0
+    while True:
+        if has_user_jobs:
+            rows = conn.execute(
+                f"""
+                SELECT url FROM jobs
+                WHERE discovered_at < datetime('now', ?)
+                  AND url NOT IN ({_ENGAGED_USER_JOBS_FILTER})
+                LIMIT ?
+                """,
+                (cutoff, batch_size),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT url FROM jobs WHERE discovered_at < datetime('now', ?) LIMIT ?",
+                (cutoff, batch_size),
+            ).fetchall()
+        if not rows:
+            break
+        urls = [r["url"] if hasattr(r, "keys") else r[0] for r in rows]
+        placeholders = ",".join("?" for _ in urls)
+        if has_user_jobs:
+            conn.execute(
+                f"DELETE FROM user_jobs WHERE job_url IN ({placeholders})", urls
             )
-            """,
-            (cutoff,),
+        cur = conn.execute(
+            f"DELETE FROM jobs WHERE url IN ({placeholders})", urls
         )
-    else:
-        # user_jobs doesn't exist — safe to delete anything old
-        cursor = conn.execute(
-            "DELETE FROM jobs WHERE discovered_at < datetime('now', ?)",
-            (cutoff,),
-        )
+        n = cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(urls)
+        total_deleted += n
 
-    deleted = cursor.rowcount
     conn.commit()
 
-    if deleted:
-        log.info("Cleanup: deleted %d jobs older than %d days", deleted, days)
+    if total_deleted:
+        log.info("Cleanup: deleted %d jobs older than %d days", total_deleted, days)
     else:
         log.debug("Cleanup: no jobs older than %d days to remove", days)
 
-    return deleted
+    return total_deleted

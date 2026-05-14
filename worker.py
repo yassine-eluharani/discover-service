@@ -232,7 +232,7 @@ def run_cycle() -> None:
 
     # Cleanup: remove old unengaged jobs to prevent unbounded DB growth
     from db import cleanup_old_jobs
-    cleanup_days = int(os.environ.get("CLEANUP_DAYS", "7"))
+    cleanup_days = int(os.environ.get("CLEANUP_DAYS", "3"))
     cleanup_old_jobs(days=cleanup_days, conn=conn)
 
     log.info("Cycle complete")
