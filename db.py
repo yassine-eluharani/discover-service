@@ -198,3 +198,89 @@ def cleanup_old_jobs(days: int = 3, conn=None, batch_size: int = 500) -> int:
         log.debug("Cleanup: no jobs older than %d days to remove", days)
 
     return total_deleted
+
+
+# ── User-job helpers (added for in-worker scoring + tailor) ─────────────────
+
+def upsert_user_job(conn, user_id: int, job_url: str, **fields) -> None:
+    """Insert or update a user_jobs row with the given fields.
+
+    Single-statement INSERT ... ON CONFLICT DO UPDATE — one HTTP round trip
+    to Turso instead of two. Only the supplied fields are written; existing
+    columns are preserved.
+    """
+    if fields:
+        cols = ["user_id", "job_url", *fields.keys()]
+        placeholders = ", ".join("?" for _ in cols)
+        col_names = ", ".join(cols)
+        set_clause = ", ".join(f"{k} = excluded.{k}" for k in fields)
+        conn.execute(
+            f"INSERT INTO user_jobs ({col_names}) VALUES ({placeholders}) "
+            f"ON CONFLICT(user_id, job_url) DO UPDATE SET {set_clause}",
+            [user_id, job_url, *fields.values()],
+        )
+    else:
+        conn.execute(
+            "INSERT OR IGNORE INTO user_jobs (user_id, job_url) VALUES (?, ?)",
+            (user_id, job_url),
+        )
+    conn.commit()
+
+
+def get_jobs_by_stage(conn=None, stage: str = "pending_score",
+                      min_score: int | None = None,
+                      limit: int = 0,
+                      user_id: int | None = None) -> list[dict]:
+    """Fetch jobs for a given pipeline stage, scoped to one user.
+
+    Worker-only port — no legacy single-user fallback. The scorer uses
+    `pending_score` exclusively (jobs with full_description that the user
+    has not scored yet); `scored` and `pending_tailor` are kept for
+    future use by the tailor stage.
+    """
+    if conn is None:
+        conn = get_connection()
+    if user_id is None:
+        raise ValueError("get_jobs_by_stage requires user_id in worker context")
+
+    conditions = {
+        "pending_score": (
+            "j.full_description IS NOT NULL "
+            "AND NOT EXISTS ("
+            "  SELECT 1 FROM user_jobs uj2 "
+            "  WHERE uj2.job_url = j.url AND uj2.user_id = ? "
+            "  AND uj2.fit_score IS NOT NULL"
+            ")"
+        ),
+        "scored": "uj.fit_score IS NOT NULL",
+        "pending_tailor": (
+            "uj.fit_score >= ? AND j.full_description IS NOT NULL "
+            "AND uj.tailored_resume_text IS NULL "
+            "AND COALESCE(uj.tailor_attempts, 0) < 5"
+        ),
+    }
+    where = conditions.get(stage)
+    if where is None:
+        raise ValueError(f"unknown stage: {stage}")
+
+    params: list = [user_id]  # for the LEFT JOIN
+    if stage == "pending_score":
+        params.append(user_id)
+    elif "?" in where:
+        params.insert(0, min_score if min_score is not None else 9)
+
+    query = (
+        "SELECT j.*, uj.fit_score, uj.score_reasoning, uj.scored_at, "
+        "uj.tailored_resume_text, uj.tailored_at, uj.tailor_attempts, "
+        "uj.cover_letter_text, uj.cover_letter_at, uj.cover_attempts, "
+        "uj.apply_status, uj.applied_at, uj.apply_error, uj.favorited "
+        "FROM jobs j "
+        "LEFT JOIN user_jobs uj ON uj.job_url = j.url AND uj.user_id = ? "
+        f"WHERE {where} ORDER BY uj.fit_score DESC, j.discovered_at DESC"
+    )
+    if limit > 0:
+        query += " LIMIT ?"
+        params.append(limit)
+
+    rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]

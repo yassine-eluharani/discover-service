@@ -230,9 +230,88 @@ def run_cycle() -> None:
     else:
         log.info("No unindexed jobs")
 
+    # ── Per-user scoring + auto-tailor for fit_score >= 9 ──────────────────
+    # Runs once per cycle for each Clerk-bound user. The pre-filter +
+    # heuristic + top-N LLM scoring is already idempotent (only touches
+    # jobs the user hasn't scored yet). Auto-tailor is capped per cycle
+    # to bound LLM cost.
+    try:
+        from user_data import list_active_user_ids
+        from scoring.filter_and_score import run_two_phase_scoring
+        active_users = list_active_user_ids()
+    except Exception:
+        log.exception("score: failed to enumerate users; skipping scoring stage")
+        active_users = []
+
+    auto_tailor_cap = int(os.environ.get("AUTO_TAILOR_PER_USER", "5"))
+
+    for uid in active_users:
+        # Score new candidates
+        try:
+            log.info("score: user_id=%s — running two-phase scoring", uid)
+            sresult = run_two_phase_scoring(uid)
+            log.info("score: user_id=%s done — %s", uid, sresult)
+        except Exception:
+            log.exception("score: user_id=%s failed", uid)
+            continue
+
+        # Auto-tailor + cover for the highest-fit jobs missing docs
+        if auto_tailor_cap > 0:
+            try:
+                _auto_tailor_for_user(conn, uid, auto_tailor_cap)
+            except Exception:
+                log.exception("auto-tailor: user_id=%s failed", uid)
+
     # Cleanup: remove old unengaged jobs to prevent unbounded DB growth
     from db import cleanup_old_jobs
     cleanup_days = int(os.environ.get("CLEANUP_DAYS", "3"))
     cleanup_old_jobs(days=cleanup_days, conn=conn)
 
     log.info("Cycle complete")
+
+
+def _auto_tailor_for_user(conn, user_id: int, max_jobs: int) -> None:
+    """Generate tailored CV + cover letter for top fit_score>=9 jobs.
+
+    Only touches jobs the user hasn't already dismissed and that don't
+    already have both `tailored_resume_text` and `cover_letter_text`.
+    Capped at `max_jobs` to bound LLM cost per cycle.
+    """
+    from scoring.tailor import tailor_job_by_url
+    from scoring.cover_letter import cover_letter_by_url
+
+    rows = conn.execute(
+        """
+        SELECT j.url AS url,
+               uj.tailored_resume_text AS tailored,
+               uj.cover_letter_text    AS cover
+        FROM jobs j
+        JOIN user_jobs uj ON uj.job_url = j.url AND uj.user_id = ?
+        WHERE uj.fit_score >= 9
+          AND (uj.tailored_resume_text IS NULL OR uj.cover_letter_text IS NULL)
+          AND uj.dismissed_at IS NULL
+          AND j.closed_at IS NULL
+        ORDER BY uj.fit_score DESC, uj.scored_at DESC
+        LIMIT ?
+        """,
+        (user_id, max_jobs),
+    ).fetchall()
+
+    if not rows:
+        log.info("auto-tailor: user_id=%s — nothing to do (no fit>=9 jobs missing docs)", user_id)
+        return
+
+    log.info("auto-tailor: user_id=%s — %d job(s) to process", user_id, len(rows))
+    for row in rows:
+        url = row["url"] if hasattr(row, "keys") else row[0]
+        tailored = row["tailored"] if hasattr(row, "keys") else row[1]
+        cover = row["cover"] if hasattr(row, "keys") else row[2]
+        try:
+            if not tailored:
+                log.info("auto-tailor: user_id=%s — tailoring %s", user_id, url[:80])
+                tailor_job_by_url(url, user_id, "normal")
+            if not cover:
+                log.info("auto-tailor: user_id=%s — cover letter for %s", user_id, url[:80])
+                cover_letter_by_url(url, user_id, "normal")
+        except Exception:
+            log.exception("auto-tailor: user_id=%s url=%s failed", user_id, url[:80])
