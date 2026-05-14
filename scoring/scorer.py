@@ -183,7 +183,9 @@ def run_scoring(user_id: int | None = None, limit: int = 0, rescore: bool = Fals
         total_with_desc = conn.execute(
             "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL", ()
         ).fetchone()[0]
-        log.info("Score state — user_id=%s, already_scored=%d, total_with_description=%d",
+        # %s everywhere — Turso returns COUNT()/id as strings, %d crashes
+        # the logger formatter and we'd lose this diagnostic line.
+        log.info("Score state — user_id=%s, already_scored=%s, total_with_description=%s",
                  user_id, already_scored, total_with_desc)
 
     if not resume_text.strip():
@@ -305,7 +307,7 @@ def run_scoring(user_id: int | None = None, limit: int = 0, rescore: bool = Fals
     # email wired up for this user yet, and the worker has no email client.
     # Re-enable here once `notifications.send_email` exists in this repo.
     if user_id is not None and high_score_urls:
-        log.info("New high-score jobs for user %d: %d urls", user_id, len(high_score_urls))
+        log.info("New high-score jobs for user %s: %d urls", user_id, len(high_score_urls))
 
     return {
         "scored": scored_count,

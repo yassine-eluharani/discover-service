@@ -211,11 +211,13 @@ def run_two_phase_scoring(
 
     rows = conn.execute(query, (user_id,)).fetchall()
     if not rows:
-        log.info("No unscored jobs with metadata for user %d.", user_id)
+        log.info("No unscored jobs with metadata for user %s.", user_id)
         return {"pre_filtered": 0, "heuristic_only": 0, "llm_scored": 0, "errors": 0}
 
     jobs = [dict(r) for r in rows]
-    log.info("Two-phase scoring: %d candidate jobs for user %d", len(jobs), user_id)
+    # %s for user_id — Turso returns it as a string and %d would crash
+    # the logger (PEP 282 swallows the exception, but it spams stderr).
+    log.info("Two-phase scoring: %d candidate jobs for user %s", len(jobs), user_id)
 
     # Phase 1: Rule-based pre-filter
     passed: list[dict] = []
