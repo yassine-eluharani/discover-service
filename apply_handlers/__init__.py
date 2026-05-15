@@ -15,14 +15,11 @@ from __future__ import annotations
 
 from types import ModuleType
 
-from apply_handlers import ashby, greenhouse, lever, workable
+from apply_handlers import ashby
 
 _HANDLERS: list[ModuleType] = [
-    ashby,       # ~24% of jobs
-    greenhouse,  # ~19% (incl. grnh.se shortlinks)
-    lever,       # ~5%
-    workable,    # ~4%
-    # workday — Phase E (opt-in via AUTO_APPLY_WORKDAY env)
+    ashby,
+    # greenhouse, lever, workable, workday — added in later phases
 ]
 
 
