@@ -271,7 +271,12 @@ def run_cycle() -> None:
 
 
 def _auto_tailor_for_user(conn, user_id: int, max_jobs: int) -> None:
-    """Generate tailored CV + cover letter for top fit_score>=9 jobs.
+    """Generate tailored CV + cover letter for top fit_score>=AUTO_TAILOR_MIN_SCORE jobs.
+
+    Defaults to score >= 8 (Gulf market is small; waiting for perfect 9-10s
+    leaves the dashboard empty). Override with AUTO_TAILOR_MIN_SCORE.
+    `ORDER BY fit_score DESC` means the rare 9-10s still win the LIMIT slots
+    when they appear; 8s only fill remaining capacity.
 
     Only touches jobs the user hasn't already dismissed and that don't
     already have both `tailored_resume_text` and `cover_letter_text`.
@@ -280,6 +285,8 @@ def _auto_tailor_for_user(conn, user_id: int, max_jobs: int) -> None:
     from scoring.tailor import tailor_job_by_url
     from scoring.cover_letter import cover_letter_by_url
 
+    min_score = int(os.environ.get("AUTO_TAILOR_MIN_SCORE", "8"))
+
     rows = conn.execute(
         """
         SELECT j.url AS url,
@@ -287,18 +294,21 @@ def _auto_tailor_for_user(conn, user_id: int, max_jobs: int) -> None:
                uj.cover_letter_text    AS cover
         FROM jobs j
         JOIN user_jobs uj ON uj.job_url = j.url AND uj.user_id = ?
-        WHERE uj.fit_score >= 9
+        WHERE uj.fit_score >= ?
           AND (uj.tailored_resume_text IS NULL OR uj.cover_letter_text IS NULL)
           AND uj.dismissed_at IS NULL
           AND j.closed_at IS NULL
         ORDER BY uj.fit_score DESC, uj.scored_at DESC
         LIMIT ?
         """,
-        (user_id, max_jobs),
+        (user_id, min_score, max_jobs),
     ).fetchall()
 
     if not rows:
-        log.info("auto-tailor: user_id=%s — nothing to do (no fit>=9 jobs missing docs)", user_id)
+        log.info(
+            "auto-tailor: user_id=%s — nothing to do (no fit>=%d jobs missing docs)",
+            user_id, min_score,
+        )
         return
 
     log.info("auto-tailor: user_id=%s — %d job(s) to process", user_id, len(rows))
