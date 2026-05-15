@@ -2,16 +2,8 @@ name: applypilot-discovery
 
 services:
   discovery:
-    image: ghcr.io/yassine-eluharani/discover-service:latest
+    image: ghcr.io/yassine-eluharani/applypilot-discovery:latest
     restart: unless-stopped
     env_file: .env
     environment:
       - PYTHONUNBUFFERED=1
-    volumes:
-      # Auto-apply screenshots — persisted so they survive container
-      # recreates. APPLY_SCREENSHOT_DIR defaults to /data/apply_screenshots
-      # in apply_runner.py.
-      - apply_data:/data
-
-volumes:
-  apply_data:

@@ -244,22 +244,6 @@ def run_cycle() -> None:
         active_users = []
 
     auto_tailor_cap = int(os.environ.get("AUTO_TAILOR_PER_USER", "5"))
-    auto_apply_cap  = int(os.environ.get("AUTO_APPLY_PER_USER", "3"))
-
-    # ── Submit queue drain (front of cycle) ──────────────────────────────
-    # The backend may have flipped some rows to apply_status='submitting'
-    # since the last cycle (user clicked "Approve & Submit" on /apply).
-    # Drain those FIRST so a user's approval doesn't wait a full cycle
-    # before the worker re-runs the handler with submit=True.
-    try:
-        from apply_runner import submit_prepared_for_user
-        for uid in active_users:
-            try:
-                submit_prepared_for_user(conn, uid)
-            except Exception:
-                log.exception("submit-drain: user_id=%s failed", uid)
-    except Exception:
-        log.exception("submit-drain: init failed; skipping")
 
     for uid in active_users:
         # Score new candidates
@@ -277,16 +261,6 @@ def run_cycle() -> None:
                 _auto_tailor_for_user(conn, uid, auto_tailor_cap)
             except Exception:
                 log.exception("auto-tailor: user_id=%s failed", uid)
-
-        # Prepare-apply: dry-run fill the highest-fit jobs that have both
-        # docs ready, take a screenshot, mark ready_to_submit. Submit only
-        # happens after the user clicks Approve in /apply.
-        if auto_apply_cap > 0:
-            try:
-                from apply_runner import prepare_apply_for_user
-                prepare_apply_for_user(conn, uid, auto_apply_cap)
-            except Exception:
-                log.exception("prepare-apply: user_id=%s failed", uid)
 
     # Cleanup: remove old unengaged jobs to prevent unbounded DB growth
     from db import cleanup_old_jobs
