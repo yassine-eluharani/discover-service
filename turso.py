@@ -80,7 +80,25 @@ class TursoConnection:
         for raw in rows_data.get("rows", []):
             row = TursoRow()
             for col, cell in zip(cols, raw):
-                row[col] = cell.get("value") if cell.get("type") != "null" else None
+                # Turso wraps every value as {"type": "...", "value": "..."}
+                # — including ints/floats (always strings in transit).
+                # Cast back so consumers can do `n + 1` without TypeError.
+                ctype = cell.get("type")
+                cval  = cell.get("value")
+                if ctype == "null" or cval is None:
+                    row[col] = None
+                elif ctype == "integer":
+                    try:
+                        row[col] = int(cval)
+                    except (TypeError, ValueError):
+                        row[col] = cval
+                elif ctype == "float":
+                    try:
+                        row[col] = float(cval)
+                    except (TypeError, ValueError):
+                        row[col] = cval
+                else:  # text, blob, anything else
+                    row[col] = cval
             rows.append(row)
 
         lastrowid = rows_data.get("last_insert_rowid")

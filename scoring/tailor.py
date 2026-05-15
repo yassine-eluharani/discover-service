@@ -505,7 +505,7 @@ def tailor_job_by_url(
             tailored_resume_path="db",
             tailored_resume_text=tailored,
             tailored_at=now,
-            tailor_attempts=cur_attempts + 1,
+            tailor_attempts=int(cur_attempts or 0) + 1,
         )
     else:
         conn.execute(
@@ -640,10 +640,10 @@ def run_tailoring(
                     conn, user_id, r["url"],
                     tailored_resume_path=r["path"],
                     tailored_at=now,
-                    tailor_attempts=cur_attempts + 1,
+                    tailor_attempts=int(cur_attempts or 0) + 1,
                 )
             else:
-                upsert_user_job(conn, user_id, r["url"], tailor_attempts=cur_attempts + 1)
+                upsert_user_job(conn, user_id, r["url"], tailor_attempts=int(cur_attempts or 0) + 1)
         else:
             if r["status"] in _success_statuses:
                 conn.execute(

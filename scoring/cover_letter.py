@@ -310,11 +310,11 @@ def run_cover_letters(
                     conn, user_id, r["url"],
                     cover_letter_path=r["path"],
                     cover_letter_at=now,
-                    cover_attempts=cur_attempts + 1,
+                    cover_attempts=int(cur_attempts or 0) + 1,
                 )
                 saved += 1
             else:
-                upsert_user_job(conn, user_id, r["url"], cover_attempts=cur_attempts + 1)
+                upsert_user_job(conn, user_id, r["url"], cover_attempts=int(cur_attempts or 0) + 1)
         else:
             if r.get("path"):
                 conn.execute(
@@ -401,7 +401,7 @@ def cover_letter_by_url(
             cover_letter_path="db",
             cover_letter_text=letter,
             cover_letter_at=now,
-            cover_attempts=cur_attempts + 1,
+            cover_attempts=int(cur_attempts or 0) + 1,
         )
     else:
         conn.execute(
