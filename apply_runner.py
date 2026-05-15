@@ -22,7 +22,6 @@ Chromium context to keep failure blast radius small.
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import logging
@@ -101,38 +100,6 @@ def _run_handler(
     return result
 
 
-_MAX_SCREENSHOT_BYTES = int(os.environ.get("APPLY_SCREENSHOT_MAX_BYTES", str(800 * 1024)))
-
-
-def _encode_screenshot_as_data_url(path_str: str | None) -> str | None:
-    """Read the PNG from disk and return a data: URL for inline rendering.
-
-    The file stays on /data/apply_screenshots for debugging; the data URL
-    is what the frontend actually displays. If the screenshot is larger
-    than `_MAX_SCREENSHOT_BYTES` we skip encoding and return None — the UI
-    falls back to "Open job site to review".
-    """
-    if not path_str:
-        return None
-    p = Path(path_str)
-    if not p.exists():
-        return None
-    try:
-        size = p.stat().st_size
-        if size > _MAX_SCREENSHOT_BYTES:
-            log.warning(
-                "screenshot %s is %d bytes (> %d cap) — skipping inline encoding",
-                p.name, size, _MAX_SCREENSHOT_BYTES,
-            )
-            return None
-        data = p.read_bytes()
-        b64 = base64.b64encode(data).decode("ascii")
-        return f"data:image/png;base64,{b64}"
-    except Exception:
-        log.exception("failed to encode screenshot %s", p)
-        return None
-
-
 def _persist(conn, user_id: int, job_url: str, result: dict) -> None:
     """Write the handler's result back to user_jobs."""
     fields: dict = {
@@ -140,12 +107,8 @@ def _persist(conn, user_id: int, job_url: str, result: dict) -> None:
         "last_attempted_at": _now_iso(),
         "apply_duration_ms": result.get("elapsed_ms"),
     }
-    # Encode the on-disk screenshot as a data: URL so the frontend can
-    # render it inline without an extra HTTP hop to the homelab. Capped
-    # at APPLY_SCREENSHOT_MAX_BYTES (default 800 KB) to keep row size sane.
-    data_url = _encode_screenshot_as_data_url(result.get("screenshot_url"))
-    if data_url:
-        fields["apply_screenshot_url"] = data_url
+    if result.get("screenshot_url"):
+        fields["apply_screenshot_url"] = result["screenshot_url"]
     if result.get("error"):
         fields["apply_error"] = result["error"][:1000]  # bound size
     if result["status"] == "applied":
