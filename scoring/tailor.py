@@ -94,7 +94,7 @@ SKILLS: Reorder each category so the job's must-haves appear first.
 
 Reframe EVERY bullet for this role. Same real work, different angle. Every bullet must be reworded. Never copy verbatim.
 
-PROJECTS: Reorder by relevance. Drop irrelevant projects entirely.
+PROJECTS: Always include the 2-3 most relevant projects from the original. Reorder by relevance to this role. Reframe descriptions/bullets for the target job. Only drop a project if you have more than 3 — never return an empty projects array if the original has any.
 
 BULLETS: Strong verb + what you built + quantified impact. Vary verbs (Built, Designed, Implemented, Reduced, Automated, Deployed, Operated, Optimized). Most relevant first. Max 4 per section.
 
@@ -117,7 +117,7 @@ BULLETS: Strong verb + what you built + quantified impact. Vary verbs (Built, De
 - Extract every degree AND every certification from the original resume.
 - One entry per degree / certification — do not collapse into a single line.
 - `header` = degree name (e.g. "Master's in Computer Engineering — Information Systems") or certification name (e.g. "AZ-104: Microsoft Certified Azure Administrator Associate").
-- `subtitle` = "{{Institution}}, {{City}} | {{Year}}" — preserve the year exactly as it appears in the original.
+- `subtitle` = for a degree: "{{Institution}}, {{City}} | {{Year}}". For a certification (no school): just the year alone (e.g. "2024") — do NOT prefix with "|".
 - `bullets` = leave empty (`[]`) unless the original lists notable coursework / honours / GPA.
 
 ## OUTPUT: Return ONLY valid JSON. No markdown fences. No commentary. No "here is" preamble.
@@ -288,15 +288,18 @@ def assemble_resume_text(data: dict, profile: dict) -> str:
             lines.append(f"- {sanitize_text(b)}")
         lines.append("")
 
-    # Projects
-    lines.append("PROJECTS")
-    for entry in data.get("projects", []):
-        lines.append(sanitize_text(entry.get("header", "")))
-        if entry.get("subtitle"):
-            lines.append(sanitize_text(entry["subtitle"]))
-        for b in entry.get("bullets", []):
-            lines.append(f"- {sanitize_text(b)}")
-        lines.append("")
+    # Projects — skip the section entirely if the LLM returned none, so
+    # the PDF doesn't get an orphan "PROJECTS" header with no entries.
+    projects = [p for p in data.get("projects", []) if isinstance(p, dict) and p.get("header")]
+    if projects:
+        lines.append("PROJECTS")
+        for entry in projects:
+            lines.append(sanitize_text(entry.get("header", "")))
+            if entry.get("subtitle"):
+                lines.append(sanitize_text(entry["subtitle"]))
+            for b in entry.get("bullets", []):
+                lines.append(f"- {sanitize_text(b)}")
+            lines.append("")
 
     # Education — same shape as experience/projects so the PDF renderer
     # picks it up with the section/header/subtitle/bullet styling.
