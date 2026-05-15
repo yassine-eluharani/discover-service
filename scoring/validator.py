@@ -154,11 +154,20 @@ def validate_json_fields(data: dict, profile: dict, mode: str = "normal") -> dic
             for b in entry.get("bullets", []):
                 all_text_parts.append(b)
 
-    # Education: preserved school must be present (always enforced)
+    # Education: preserved school must be present (always enforced).
+    # Education was a single string in the old schema and is now a list of
+    # {header, subtitle, bullets} entries — handle both shapes.
     preserved_school = resume_facts.get("preserved_school", "")
     if preserved_school:
-        edu = str(data.get("education", ""))
-        if preserved_school.lower() not in edu.lower():
+        edu_field = data.get("education", "")
+        if isinstance(edu_field, list):
+            edu_text = " ".join(
+                f"{e.get('header', '')} {e.get('subtitle', '')} {' '.join(e.get('bullets') or [])}"
+                for e in edu_field if isinstance(e, dict)
+            )
+        else:
+            edu_text = str(edu_field)
+        if preserved_school.lower() not in edu_text.lower():
             errors.append(f"Education '{preserved_school}' missing")
 
     # Bulk text checks

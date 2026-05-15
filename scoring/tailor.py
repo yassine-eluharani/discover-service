@@ -113,9 +113,16 @@ BULLETS: Strong verb + what you built + quantified impact. Vary verbs (Built, De
 - Preserved school: {school}
 - Must fit 1 page.
 
+## EDUCATION:
+- Extract every degree AND every certification from the original resume.
+- One entry per degree / certification — do not collapse into a single line.
+- `header` = degree name (e.g. "Master's in Computer Engineering — Information Systems") or certification name (e.g. "AZ-104: Microsoft Certified Azure Administrator Associate").
+- `subtitle` = "{{Institution}}, {{City}} | {{Year}}" — preserve the year exactly as it appears in the original.
+- `bullets` = leave empty (`[]`) unless the original lists notable coursework / honours / GPA.
+
 ## OUTPUT: Return ONLY valid JSON. No markdown fences. No commentary. No "here is" preamble.
 
-{{"title":"Role Title","summary":"2-3 tailored sentences.","skills":{{"Languages":"...","Frameworks":"...","DevOps & Infra":"...","Databases":"...","Tools":"..."}},"experience":[{{"header":"Title at Company","subtitle":"Tech | Dates","bullets":["bullet 1","bullet 2","bullet 3","bullet 4"]}}],"projects":[{{"header":"Project Name - Description","subtitle":"Tech | Dates","bullets":["bullet 1","bullet 2"]}}],"education":"{school} | {education_level}"}}"""
+{{"title":"Role Title","summary":"2-3 tailored sentences.","skills":{{"Languages":"...","Frameworks":"...","DevOps & Infra":"...","Databases":"...","Tools":"..."}},"experience":[{{"header":"Title at Company","subtitle":"Tech | Dates","bullets":["bullet 1","bullet 2","bullet 3","bullet 4"]}}],"projects":[{{"header":"Project Name - Description","subtitle":"Tech | Dates","bullets":["bullet 1","bullet 2"]}}],"education":[{{"header":"Degree or Certification Name","subtitle":"Institution, City | Year","bullets":[]}}]}}"""
 
 
 def _build_judge_prompt(profile: dict) -> str:
@@ -291,9 +298,26 @@ def assemble_resume_text(data: dict, profile: dict) -> str:
             lines.append(f"- {sanitize_text(b)}")
         lines.append("")
 
-    # Education
+    # Education — same shape as experience/projects so the PDF renderer
+    # picks it up with the section/header/subtitle/bullet styling.
+    # Back-compat: if the LLM returned a string (old schema), wrap it as
+    # one entry so the validator's school-presence check still passes.
+    edu = data.get("education", [])
+    if isinstance(edu, str):
+        edu = [{"header": edu, "subtitle": "", "bullets": []}] if edu.strip() else []
     lines.append("EDUCATION")
-    lines.append(sanitize_text(str(data.get("education", ""))))
+    for entry in edu:
+        if not isinstance(entry, dict):
+            continue
+        header = sanitize_text(str(entry.get("header", "")))
+        if header:
+            lines.append(header)
+        subtitle = sanitize_text(str(entry.get("subtitle", "")))
+        if subtitle:
+            lines.append(subtitle)
+        for b in entry.get("bullets", []) or []:
+            lines.append(f"- {sanitize_text(str(b))}")
+        lines.append("")
 
     return "\n".join(lines)
 
