@@ -18,13 +18,24 @@ BOOTSTRAP_SEARCHES_PATH = Path(__file__).parent / "bootstrap_searches.yaml"
 
 # ── Freshness tracking ────────────────────────────────────────────────────────
 
-def _is_stale(conn, query: str, location: str, boards: list[str]) -> bool:
+def _location_key(location: str, remote: bool) -> str:
+    """Encode remote flag into the location key for freshness tracking.
+
+    discovery_runs has no `is_remote` column, but a remote vs on-site search
+    for the same location are different combos. Suffixing keeps the dedup
+    correct without a schema migration on Turso.
+    """
+    return f"{location} [remote]" if remote else location
+
+
+def _is_stale(conn, query: str, location: str, remote: bool, boards: list[str]) -> bool:
     boards_json = json.dumps(sorted(boards))
+    loc_key = _location_key(location, remote)
     row = conn.execute(
         "SELECT completed_at FROM discovery_runs "
         "WHERE query = ? AND location = ? AND boards_json = ? AND status = 'done' "
         "ORDER BY completed_at DESC LIMIT 1",
-        (query, location, boards_json),
+        (query, loc_key, boards_json),
     ).fetchone()
     if not row or not row["completed_at"]:
         return True
@@ -34,12 +45,12 @@ def _is_stale(conn, query: str, location: str, boards: list[str]) -> bool:
     return datetime.now(timezone.utc) - completed > timedelta(hours=STALE_AFTER_HOURS)
 
 
-def _record_start(conn, query: str, location: str, boards: list[str]) -> int:
+def _record_start(conn, query: str, location: str, remote: bool, boards: list[str]) -> int:
     now = datetime.now(timezone.utc).isoformat()
     cur = conn.execute(
         "INSERT INTO discovery_runs (query, location, boards_json, started_at, status) "
         "VALUES (?, ?, ?, ?, 'running')",
-        (query, location, json.dumps(sorted(boards)), now),
+        (query, _location_key(location, remote), json.dumps(sorted(boards)), now),
     )
     conn.commit()
     return cur.lastrowid
@@ -120,7 +131,7 @@ def _discover_combo(conn, combo: dict) -> None:
     cfg      = combo["config"]
     defaults = combo.get("defaults", {})
 
-    run_id = _record_start(conn, query, location, boards)
+    run_id = _record_start(conn, query, location, combo.get("remote", False), boards)
     try:
         from discovery import _run_one_search, _load_location_config
 
@@ -175,7 +186,7 @@ def run_cycle() -> None:
             log.info("Bootstrap mode: no user configs, using bootstrap_searches.yaml")
 
     combos = _unique_combos(all_configs)
-    stale  = [c for c in combos if _is_stale(conn, c["query"], c["location"], c["boards"])]
+    stale  = [c for c in combos if _is_stale(conn, c["query"], c["location"], c.get("remote", False), c["boards"])]
 
     log.info("%d unique combos, %d stale → scraping", len(combos), len(stale))
     for combo in stale:
