@@ -55,6 +55,43 @@ def _scrape_with_retry(kwargs: dict, max_retries: int = 2, backoff: float = 5.0)
 
 # -- Location filtering ------------------------------------------------------
 
+# Map a search location string to JobSpy's `country_indeed` value so Indeed
+# queries hit the right country site (sa.indeed.com, ae.indeed.com, etc).
+# JobSpy retries with country_indeed="worldwide" if the value is rejected,
+# so unknown locations still produce results — just slightly slower.
+_COUNTRY_INDEED_MAP = {
+    "saudi arabia": "saudi arabia",
+    "ksa": "saudi arabia",
+    "united arab emirates": "united arab emirates",
+    "uae": "united arab emirates",
+    "qatar": "qatar",
+    "bahrain": "bahrain",
+    "kuwait": "kuwait",
+    "oman": "oman",
+    "egypt": "egypt",
+    "morocco": "morocco",
+    "remote": "worldwide",
+    "worldwide": "worldwide",
+}
+
+
+def _country_indeed_for(location: str, defaults: dict) -> str:
+    """Pick the JobSpy `country_indeed` value for a given location.
+
+    Per-location override beats the global default beats "usa". This is
+    what lets one search config target the Gulf without leaking US-remote
+    listings into every result.
+    """
+    loc_lower = (location or "").lower().strip()
+    # Try exact match first, then check if any mapping key is a substring
+    if loc_lower in _COUNTRY_INDEED_MAP:
+        return _COUNTRY_INDEED_MAP[loc_lower]
+    for key, val in _COUNTRY_INDEED_MAP.items():
+        if key in loc_lower:
+            return val
+    return defaults.get("country_indeed", "usa")
+
+
 def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
     accept = search_cfg.get("location_accept", [])
     reject = search_cfg.get("location_reject_non_remote", [])
@@ -188,7 +225,7 @@ def _run_one_search(
             "results_wanted": results_per_site,
             "hours_old": hours_old,
             "description_format": "markdown",
-            "country_indeed": defaults.get("country_indeed", "usa"),
+            "country_indeed": _country_indeed_for(s["location"], defaults),
             "verbose": 0,
         }
         if s.get("remote"):

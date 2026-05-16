@@ -93,7 +93,10 @@ def _unique_combos(configs: list[dict]) -> list[dict]:
             for loc in locs:
                 loc_str = loc["location"] if isinstance(loc, dict) else str(loc)
                 remote  = loc.get("remote", False) if isinstance(loc, dict) else False
-                key = (query_str.lower(), loc_str.lower(), tuple(boards))
+                # Include `remote` in the dedup key so the same location can
+                # appear twice — once for remote-only and once for on-site —
+                # without one being silently dropped.
+                key = (query_str.lower(), loc_str.lower(), bool(remote), tuple(boards))
                 if key not in seen:
                     seen.add(key)
                     combos.append({
