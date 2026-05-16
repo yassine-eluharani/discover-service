@@ -99,6 +99,24 @@ def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
 
 
 def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
+    """Decide whether to keep a JobSpy result based on its location string.
+
+    The SEARCH already constrains location (we called JobSpy with
+    location="Saudi Arabia" / "UAE" / etc), so JobSpy's results are
+    already roughly on-target. This filter is a belt-and-suspenders
+    safety net — it should only reject when there's clear evidence
+    of a wrong-country match.
+
+    Rules:
+      - Missing location → accept (let scoring decide).
+      - Remote/anywhere keyword → accept.
+      - Matches an explicit reject pattern ("us only", "uk only", ...) → reject.
+      - Default → ACCEPT. The previous default-reject silently dropped
+        most on-site Gulf jobs because LinkedIn location formats
+        ("Dubai, Dubayy, United Arab Emirates") don't always substring-match
+        the accept patterns ("dubai", "uae"). The LLM scorer is the
+        actual relevance gate.
+    """
     if not location:
         return True
     loc = location.lower()
@@ -107,10 +125,7 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
     for r in reject:
         if r.lower() in loc:
             return False
-    for a in accept:
-        if a.lower() in loc:
-            return True
-    return False
+    return True
 
 
 def _title_ok(title: str | None, include_any: list[str], exclude_any: list[str]) -> bool:
